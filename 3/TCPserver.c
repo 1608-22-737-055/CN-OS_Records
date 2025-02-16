@@ -1,77 +1,95 @@
-#include <arpa/inet.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 5555
+#define BUFFER_SIZE 1024
 
 int main() {
-    int sockfd, confd;
+    int server_fd, client_fd;
     struct sockaddr_in server_address, client_address;
-    char buffer1[100], buffer2[100];
-    
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    socklen_t client_len = sizeof(client_address);
+    char buffer1[BUFFER_SIZE], buffer2[BUFFER_SIZE], result[BUFFER_SIZE * 2];
+
+    // Create socket
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation failed");
-        return 1;
+        exit(EXIT_FAILURE);
     }
-    
+
+    // Set socket options
+    int opt = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt failed");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Configure server address
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(5555);
-    server_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    
-    printf("\nWaiting for client request...\n");
-    
-    if (bind(sockfd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+    server_address.sin_port = htons(PORT);
+    server_address.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind socket
+    if (bind(server_fd, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
         perror("Bind failed");
-        close(sockfd);
-        return 1;
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    
-    if (listen(sockfd, 10) < 0) {
+
+    // Listen for connections
+    if (listen(server_fd, 5) < 0) {
         perror("Listen failed");
-        close(sockfd);
-        return 1;
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    
-    socklen_t client_address_len = sizeof(client_address);
-    if ((confd = accept(sockfd, (struct sockaddr *)&client_address, &client_address_len)) < 0) {
+
+    printf("Server is listening on port %d...\n", PORT);
+
+    // Accept a connection
+    if ((client_fd = accept(server_fd, (struct sockaddr*)&client_address, &client_len)) < 0) {
         perror("Accept failed");
-        close(sockfd);
-        return 1;
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    
-    printf("\nClient request accepted...\n");
-    
-    if (read(confd, buffer1, sizeof(buffer1)) < 0) {
-        perror("Read failed");
-        close(confd);
-        close(sockfd);
-        return 1;
+    printf("Client connected.\n");
+
+    // Read the first string
+    if (read(client_fd, buffer1, BUFFER_SIZE) < 0) {
+        perror("Failed to read first string");
+        close(client_fd);
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    int nH = atoi(buffer1);
-    printf("\nFrom Client: No. of Hours: %d\n", nH);
-    
-    if (read(confd, buffer2, sizeof(buffer2)) < 0) {
-        perror("Read failed");
-        close(confd);
-        close(sockfd);
-        return 1;
+    printf("Received first string: %s\n", buffer1);
+
+    // Read the second string
+    if (read(client_fd, buffer2, BUFFER_SIZE) < 0) {
+        perror("Failed to read second string");
+        close(client_fd);
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    int aH = atoi(buffer2);
-    printf("\nFrom Client: Amount per Hour: %d\n", aH);
-    
-    int Sal = nH * aH;
-    snprintf(buffer1, sizeof(buffer1), "%d", Sal);
-    
-    if (write(confd, buffer1, sizeof(buffer1)) < 0) {
-        perror("Write failed");
-        close(confd);
-        close(sockfd);
-        return 1;
+    printf("Received second string: %s\n", buffer2);
+
+    // Concatenate strings
+    snprintf(result, sizeof(result), "%s%s", buffer1, buffer2);
+    printf("Concatenated result: %s\n", result);
+
+    // Send concatenated result back to client
+    if (write(client_fd, result, strlen(result)) < 0) {
+        perror("Failed to send result");
+        close(client_fd);
+        close(server_fd);
+        exit(EXIT_FAILURE);
     }
-    printf("\nSent to Client: %s\n", buffer1);
-    
-    close(confd);
-    close(sockfd);
+    printf("Result sent to client.\n");
+
+    // Close connections
+    close(client_fd);
+    close(server_fd);
+
     return 0;
 }
